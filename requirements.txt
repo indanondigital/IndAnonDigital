@@ -1,0 +1,12 @@
+psycopg2-binary
+razorpay
+python-dotenv
+qrcode
+pillow
+python-telegram-bot
+asyncpg>=0.29.0
+fastapi
+uvicorn
+asyncpg
+quart
+hypercorn

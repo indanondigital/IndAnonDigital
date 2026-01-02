@@ -3,25 +3,32 @@ import asyncpg
 import os
 from dotenv import load_dotenv
 
+# Load variables from .env file
 load_dotenv()
 
-# Get password from .env
-DB_PASS = os.getenv("DB_PASS")
-# Connection URL
-DB_URL = f"postgresql://postgres:{DB_PASS}@localhost/anonchat"
+# 1. Get the FULL URL directly from .env
+# This allows it to work with Railway, Localhost, or any other cloud provider automatically.
+DB_URL = os.getenv("DATABASE_URL")
+
+if not DB_URL:
+    print("❌ Error: DATABASE_URL not found in .env file")
+    exit()
 
 async def create_tables():
     print("⏳ Connecting to database...")
     try:
+        # Connect using the URL from .env
         conn = await asyncpg.connect(DB_URL)
         
         print("🔨 Creating tables...")
+        
         # 1. Create Users Table
         await conn.execute("""
             CREATE TABLE IF NOT EXISTS users (
                 user_id BIGINT PRIMARY KEY,
                 gender VARCHAR(10) DEFAULT 'unknown',
                 is_premium BOOLEAN DEFAULT FALSE,
+                vip_expiry TIMESTAMP,
                 joined_at TIMESTAMP DEFAULT NOW()
             );
         """)
@@ -44,7 +51,7 @@ async def create_tables():
             );
         """)
         
-        print("✅ SUCCESS! All tables created.")
+        print("✅ SUCCESS! All tables created successfully.")
         await conn.close()
         
     except Exception as e:

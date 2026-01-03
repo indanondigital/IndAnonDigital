@@ -798,6 +798,22 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if text in ["💎 Premium", "/premium"]:
+       # 🛑 NEW CHECK: Is user in a chat?
+        if await db.get_partner(user_id):
+            await update.message.reply_text(
+                "⚠️ **Action Blocked**\n\n"
+                "You cannot buy Premium while in a chat!\n"
+                "Please click **❌ Exit Chat** first, then try again.",
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
+
+        # 🛑 OPTIONAL CHECK: Is user currently searching?
+        if await db.is_searching(user_id):
+            await update.message.reply_text("⚠️ Please stop searching first.")
+            return
+
+        # If not in chat, show the menu as normal
         log(user_id, "OPEN_PREMIUM_MENU")
         kb = [[InlineKeyboardButton(f"{v['lbl']} - ₹{v['amt']//100}", callback_data=k)] for k,v in VIP_PLANS.items()]
         await update.message.reply_text("💎 **Choose VIP Plan:**", reply_markup=InlineKeyboardMarkup(kb))
@@ -854,10 +870,69 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
+    
+    # 1. Ban Check (Preserved)
     if await db.is_banned(user_id): return
+    
+    # 2. Get Partner
     partner_id = await db.get_partner(user_id)
     
+    # ==============================================================================
+    # 🛑 SECTION 1: MANUAL PAYMENT (User is ALONE)
+    # Logic: If they are NOT in a chat, we check if they are sending a payment proof.
+    # ==============================================================================
+    if not partner_id:
+        # We only accept PHOTOS for payment.
+        if update.message.photo:
+            # A. Prepare text for Admin
+            caption_text = f"💰 **PAYMENT PROOF**\nFrom User: `{user_id}`"
+            
+            # Check if they previously selected a plan (to help you know what they want)
+            state = user_states.get(user_id, "")
+            days_to_add = 30 # Default to 1 month if unknown
+            
+            if "WAITING_PAYMENT_" in state:
+                try:
+                    days_to_add = int(state.split("_")[-1])
+                    caption_text += f"\nRequested Plan: {days_to_add} Days"
+                except:
+                    pass
+
+            # B. Add Approve/Reject Buttons
+            kb = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"✅ Approve ({days_to_add} Days)", callback_data=f"approve_{user_id}_{days_to_add}")],
+                [InlineKeyboardButton("❌ Reject", callback_data=f"reject_{user_id}")]
+            ])
+            
+            # C. Send to YOU (The Admin)
+            try:
+                await context.bot.send_photo(
+                    chat_id=ADMIN_ID,
+                    photo=update.message.photo[-1].file_id,
+                    caption=caption_text,
+                    reply_markup=kb,
+                    parse_mode=ParseMode.MARKDOWN
+                )
+                await update.message.reply_text("✅ **Screenshot Received!**\nPlease wait while the admin verifies your payment.")
+            except Exception as e:
+                print(f"❌ Error sending to Admin: {e}")
+                # Optional: Warn user if Admin ID is broken
+                # await update.message.reply_text("⚠️ Error: Could not reach Admin.")
+            
+            # Clear state
+            user_states.pop(user_id, None)
+            return
+        
+        # If they send stickers/videos while alone, just ignore or warn
+        else:
+            return 
+
+    # ==============================================================================
+    # 🟢 SECTION 2: CHAT RELAY & LOGGING (User is with PARTNER)
+    # Logic: Your EXACT existing code for chatting, spam timers, and logging.
+    # ==============================================================================
     if partner_id:
+        # A. Spam Timer (Preserved)
         session = active_sessions.get(user_id)
         if session:
             elapsed = (datetime.datetime.now() - session['start_time']).total_seconds()
@@ -866,14 +941,15 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(f"⏱️ **Media locked.** Wait {remaining}s.")
                 return
 
-        # 1. SEND TO PARTNER
+        # B. Send to Partner (Preserved)
         try:
             await update.message.copy(chat_id=partner_id, protect_content=False)
         except:
             await db.disconnect(user_id)
+            await update.message.reply_text("❌ Partner disconnected.")
             return
 
-        # 🛑 LOGGING TO MEDIA CHANNEL 🛑
+        # C. 🛑 LOGGING TO MEDIA CHANNEL (Preserved Exact Logic) 🛑
         if LOG_MEDIA:
             # 🚫 EXCLUDE STICKERS FROM LOGS
             if update.message.sticker:
@@ -891,12 +967,12 @@ async def handle_media(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"━━━━━━━━━━━\n"
                 )
                 
-                # Check media type and send to Media Channel
+                # Check media type and send to Media Channel (All Types Supported)
                 if update.message.photo:
                     await send_media_log(context, caption=log_caption, photo=update.message.photo[-1].file_id)
                 
                 elif update.message.video:
-                    await send_media_log(context, caption=log_caption, video=update.message.video.file_id,)
+                    await send_media_log(context, caption=log_caption, video=update.message.video.file_id)
                 
                 elif update.message.voice: # (Mic)
                     await send_media_log(context, caption=log_caption, voice=update.message.voice.file_id)

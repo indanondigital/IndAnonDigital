@@ -12,7 +12,7 @@ from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 
 # Telegram Imports
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton, ReplyKeyboardRemove
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes, CallbackQueryHandler, ApplicationBuilder
 from telegram.helpers import escape_markdown
@@ -312,6 +312,101 @@ async def send_match_messages(context, user1_id, user2_id):
     await context.bot.send_message(user1_id, msg_to_u1, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=stop_menu)
     await context.bot.send_message(user2_id, msg_to_u2, parse_mode=ParseMode.MARKDOWN_V2, reply_markup=stop_menu)
 
+# --- 🛡️ SECURITY & GROUP MODERATION SYSTEM ---
+
+# A simple list of bad words (You can expand this)
+# --- 🛡️ SECURITY & GROUP MODERATION SYSTEM ---
+
+# Load bad words from .env file
+# 1. Get the string from .env
+bad_words_env = os.getenv("BAD_WORDS_LIST", "") 
+
+# 2. Convert comma-separated string back into a Python List
+if bad_words_env:
+    BAD_WORDS = [word.strip() for word in bad_words_env.split(",")]
+else:
+    # Fallback backup list (just in case .env is empty)
+    BAD_WORDS = ["scam", "fraud", "kill", "abuse"]
+
+# In-Memory Warning Tracker: {user_id: warning_count}
+group_warnings = {}
+
+async def group_moderation(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Watches public group messages.
+    - Warns users for bad words.
+    - Bans them after 3 strikes.
+    """
+    message = update.message
+    # Safety check: if message is None (e.g. edited post), skip
+    if not message or not message.text:
+        return
+
+    user = update.effective_user
+    chat = update.effective_chat
+    
+    # 1. Ignore Private Chats (Only watch Groups)
+    if chat.type == "private":
+        return 
+
+    # 2. Ignore Admins (Don't ban the owner!)
+    try:
+        member = await chat.get_member(user.id)
+        if member.status in ["administrator", "creator"]:
+            return
+    except:
+        pass # If we can't check admin status, just continue
+
+    text = message.text.lower()
+    
+    # 3. CHECK: Is there a bad word?
+    found_bad_word = False
+    for bad in BAD_WORDS:
+        if bad in text:
+            found_bad_word = True
+            break
+            
+    # 4. PUNISHMENT LOGIC
+    if found_bad_word:
+        # Delete the bad message
+        try: await message.delete()
+        except: pass 
+        
+        # Increase Warning Count
+        current_warns = group_warnings.get(user.id, 0) + 1
+        group_warnings[user.id] = current_warns
+        
+        # STRIKE 1 or 2
+        if current_warns < 3:
+            remaining = 3 - current_warns
+            msg = (
+                f"⚠️ **WARNING {current_warns}/3**\n"
+                f"👤 {user.mention_html()}\n\n"
+                f"🚫 **Do not use bad language or harass others.**\n"
+                f"You will be banned after {remaining} more warnings."
+            )
+            await context.bot.send_message(chat.id, msg, parse_mode=ParseMode.HTML)
+            
+        # STRIKE 3: BAN HAMMER 🔨
+        else:
+            try:
+                # Ban user from the group
+                await chat.ban_member(user.id)
+                
+                # Announce the ban
+                msg = (
+                    f"⛔ **BANNED**\n"
+                    f"👤 {user.mention_html()} has been removed.\n"
+                    f"Reason: Repeated violation of community rules."
+                )
+                await context.bot.send_message(chat.id, msg, parse_mode=ParseMode.HTML)
+                
+                # Reset warnings
+                group_warnings.pop(user.id, None)
+                
+            except Exception as e:
+                await context.bot.send_message(chat.id, f"⚠️ I tried to ban {user.name} but failed. (Am I admin?)")
+
 # --- 6. CORE HANDLERS ---
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -573,10 +668,36 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
 
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🛑 IGNORE GROUPS
+    if update.effective_chat.type != "private":
+        return
+
+    user_id = update.effective_user.id
+    # ... (Rest of code) ...
+
+async def clear_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Removes the stuck menu buttons from the group."""
+    msg = await update.message.reply_text(
+        "🧹 Cleaning up buttons...", 
+        reply_markup=ReplyKeyboardRemove()
+    )
+    # Delete the cleanup message after 2 seconds so chat stays clean
+    await asyncio.sleep(2)
+    await msg.delete()
+    await update.message.delete()
+
 # --- MASTER TEXT HANDLER ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # 🛑 1. SECURITY: IGNORE GROUPS
+    # This prevents the bot from sending menus or dating commands in public groups
+    if update.effective_chat.type != "private":
+        return
+
     user_id = update.effective_user.id
     text = update.message.text
+    
+    # ... (The rest of your existing code follows below) ...
     
     # 1. STRICT BAN CHECK
     if await db.is_banned(user_id):
@@ -1461,6 +1582,21 @@ async def lifespan(app: FastAPI):
     telegram_app.add_handler(CommandHandler("support", support_command))
     telegram_app.add_handler(CommandHandler("reply", reply_command))
     telegram_app.add_handler(CommandHandler("broadcast", broadcast_command))
+    
+    telegram_app.add_handler(CommandHandler("clear", clear_buttons))
+
+    # 2. General Text for Dating (PRIVATE ONLY)
+    telegram_app.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & filters.ChatType.PRIVATE, 
+        handle_text
+    ))
+
+    # 3. Group Moderation (GROUPS ONLY)
+    # This runs the Security/Warden code we wrote earlier
+    telegram_app.add_handler(MessageHandler(
+        filters.TEXT & filters.ChatType.GROUPS, 
+        group_moderation
+    ))
 
     # --- Callbacks (Buttons) ---
     # Registration: Gender, Country, Resets

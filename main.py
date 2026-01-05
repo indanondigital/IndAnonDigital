@@ -475,7 +475,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     kb = InlineKeyboardMarkup([
         [InlineKeyboardButton("💬 Support", url="https://t.me/YourSupportUser"), 
-         InlineKeyboardButton("📢 Channel", url="https://t.me/YourChannelLink")]
+         InlineKeyboardButton("📢 Channel", url="https://t.me/Ind_AnonChatbotUpdates")]
     ])
     await update.message.reply_text(help_text, reply_markup=kb)
 
@@ -493,6 +493,85 @@ async def handle_ban_appeal(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.answer("Appeal sent to Admin.", show_alert=True)
         await query.edit_message_text("✅ **Appeal Sent.**\nThe admin has been notified.")
+
+# --- SUPPORT & CHANNEL SYSTEM ---
+
+async def support_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """User sends a message to Admin."""
+    user_id = update.effective_user.id
+    args = context.args # The text after /support
+    
+    if not args:
+        await update.message.reply_text("⚠️ **Usage:** `/support Your Message Here`\nExample: `/support I found a bug!`", parse_mode=ParseMode.MARKDOWN)
+        return
+
+    message = " ".join(args)
+    
+    # 1. Notify Admin
+    admin_text = (
+        f"🆘 **SUPPORT REQUEST**\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"👤 From: `{user_id}`\n"
+        f"📝 Message: {message}\n"
+        f"━━━━━━━━━━━━━━━\n"
+        f"👇 **To Reply:**\n"
+        f"`/reply {user_id} YourResponse`"
+    )
+    
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=admin_text, parse_mode=ParseMode.MARKDOWN)
+        await update.message.reply_text("✅ **Support Request Sent!**\nThe admin will reply shortly.")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error sending to admin: {e}")
+
+async def reply_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin replies to a user."""
+    # Security: Only Admin can use this
+    if update.effective_user.id != ADMIN_ID: return
+
+    try:
+        # Args: /reply <user_id> <message>
+        if len(context.args) < 2:
+            await update.message.reply_text("⚠️ Usage: `/reply <user_id> <message>`", parse_mode=ParseMode.MARKDOWN)
+            return
+
+        target_id = int(context.args[0])
+        reply_text = " ".join(context.args[1:])
+        
+        # Send to User
+        await context.bot.send_message(
+            chat_id=target_id,
+            text=f"👨‍💻 **Admin Reply:**\n\n{reply_text}"
+        )
+        
+        await update.message.reply_text(f"✅ Sent to {target_id}.")
+        
+    except Exception as e:
+        await update.message.reply_text(f"❌ Failed: {e}")
+
+async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Admin posts to the Public Channel."""
+    # Security: Only Admin can use this
+    if update.effective_user.id != ADMIN_ID: return
+    
+    # Get Channel ID from env (Make sure you added it!)
+    channel_id = os.getenv("CHANNEL_ID") 
+    
+    if not channel_id:
+        await update.message.reply_text("⚠️ Error: `CHANNEL_ID` not set in .env")
+        return
+
+    if not context.args:
+        await update.message.reply_text("⚠️ Usage: `/broadcast Your Message`")
+        return
+
+    message = " ".join(context.args)
+    
+    try:
+        await context.bot.send_message(chat_id=int(channel_id), text=message)
+        await update.message.reply_text("✅ **Posted to Channel!**")
+    except Exception as e:
+        await update.message.reply_text(f"❌ Error: {e}")
 
 # --- MASTER TEXT HANDLER ---
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -1378,6 +1457,11 @@ async def lifespan(app: FastAPI):
     # --- Admin Ops ---
     telegram_app.add_handler(CommandHandler(["ban", "unban", "addvip", "removevip"], admin_op))
 
+    # Support & Admin Tools
+    telegram_app.add_handler(CommandHandler("support", support_command))
+    telegram_app.add_handler(CommandHandler("reply", reply_command))
+    telegram_app.add_handler(CommandHandler("broadcast", broadcast_command))
+
     # --- Callbacks (Buttons) ---
     # Registration: Gender, Country, Resets
     telegram_app.add_handler(CallbackQueryHandler(handle_registration_callbacks, pattern="^(reg_|reset_|close_)"))
@@ -1396,7 +1480,13 @@ async def lifespan(app: FastAPI):
 
     # --- Message Handlers (Text & Media) ---
     # Redirect specific commands to handle_text to manage chat logic
-    telegram_app.add_handler(CommandHandler(["report", "cancel", "chat", "exit", "premium", "settings"], handle_text))
+    # ✅ FIX: These commands will NOW only work in Private DMs
+    # This prevents your bot from stealing "/settings" from Shieldy in the group
+    telegram_app.add_handler(CommandHandler(
+        ["chat", "exit", "report", "cancel","rechat", "start", "help", "about", "preferences", "support", "reply", "broadcast", "premium", "settings"], 
+        handle_text, 
+        filters=filters.ChatType.PRIVATE
+    ))
     
     # General Text (Chatting)
     telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))

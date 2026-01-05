@@ -569,8 +569,8 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"━━━━━━━━━━━━━━━━━━\n"
     )
     kb = InlineKeyboardMarkup([
-        [InlineKeyboardButton("💬 Support", url="https://t.me/YourSupportUser"), 
-         InlineKeyboardButton("📢 Channel", url="https://t.me/Ind_AnonChatbotUpdates")]
+        [InlineKeyboardButton("💬 Support", url="https://t.me/Bankai3221    "), 
+         InlineKeyboardButton("📢 Channel", url="https://t.me/Ind_AnonChatCommunity")]
     ])
     await update.message.reply_text(help_text, reply_markup=kb)
 
@@ -1395,6 +1395,12 @@ async def admin_op(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Security check: Only allow the Admin ID from .env
     if update.effective_user.id != ADMIN_ID: 
         return
+    
+    # 🧹 CLEANUP: Delete the admin's command from the group immediately
+    try:
+        await update.message.delete()
+    except:
+        pass # If bot can't delete (not admin), just ignore
 
     try:
         # Split command to handle args: /addvip <uid> <days>

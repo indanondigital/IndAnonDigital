@@ -73,8 +73,9 @@ class Database:
                 print(f"⚠️ Migration Note: {e}")
 
     # --- USER MANAGEMENT ---
-    async def add_user(self, user_id):
+    async def add_user(self, user_id, username=None, first_name=None):
         async with self.pool.acquire() as conn:
+            # We accept username/first_name to prevent errors, but we only save ID
             await conn.execute("INSERT INTO users (user_id) VALUES ($1) ON CONFLICT (user_id) DO NOTHING", user_id)
 
     async def get_user(self, user_id):
@@ -184,7 +185,12 @@ class Database:
         async with self.pool.acquire() as conn:
             partner = await self.get_partner(user_id)
             if partner:
-                await conn.execute("DELETE FROM active_chats WHERE user_1 = $1 OR user_2 = $1 OR user_1 = $2 OR user_2 = $2", user_id, partner)
+                # Safer delete: Only remove the specific pair
+                await conn.execute("""
+                    DELETE FROM active_chats 
+                    WHERE (user_1 = $1 AND user_2 = $2) 
+                       OR (user_1 = $2 AND user_2 = $1)
+                """, user_id, partner)
             return partner
 
     async def is_searching(self, user_id):
@@ -192,7 +198,7 @@ class Database:
             val = await conn.fetchval("SELECT 1 FROM search_queue WHERE user_id = $1", user_id)
             return val is not None
 
-    # --- 🆕 NEW VIP RE-CHAT FEATURE (SQL Version) ---
+    # --- 🆕 NEW VIP RE-CHAT FEATURE ---
     async def connect_users(self, user1_id, user2_id):
         """Forces two specific users to match."""
         async with self.pool.acquire() as conn:

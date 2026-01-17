@@ -194,7 +194,7 @@ async def send_welcome(context, user_id):
         reply_markup=main_menu,
         parse_mode=ParseMode.MARKDOWN
     )
-    logger.info(f"User {user_id} is now registerd.")
+    
 
 VIP_PLANS = {
     "pay_1m":  {"amt": 20000,  "days": 30,  "lbl": "1 Month"},
@@ -227,13 +227,16 @@ search_menu = ReplyKeyboardMarkup([
 
 def log(user_id, action, **kwargs):
     """
-    Logs actions in the specific Railway format.
+    Logs actions to Railway using the professional Logger.
     """
-    timestamp = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    log_string = f"[LOG] {timestamp} | User: {user_id} | Action: {action}"
-    for key, value in kwargs.items():
-        log_string += f" | {key}: {value}"
-    print(log_string, flush=True)
+    # Build the extra details string
+    details = " | ".join([f"{k}: {v}" for k, v in kwargs.items()])
+    
+    # Create the final message
+    log_message = f"User: {user_id} | Action: {action} | {details}"
+    
+    # Send to Railway Logs
+    logger.info(log_message)
 
 def generate_session_id():
     return ''.join(random.choices(string.ascii_uppercase + string.digits, k=6))
@@ -245,7 +248,7 @@ def generate_random_contact():
 
 # --- 5. UI GENERATORS (SAFE MODE) ---
 
-# [PASTE THIS INTO main.py - REPLACING THE OLD send_match_messages]
+
 
 async def send_match_messages(context, user1_id, user2_id):
     """Sends the formatted match message SECURELY and LOGS the match."""
@@ -423,8 +426,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = update.effective_user
-    print(f"DEBUG: /start received from {user.id}") # Logs to Railway console
-
+    logger.info(f"🚀 /start command initiated by User: {user.id} ({user.first_name})")
     try:
         # --- DEBUG CHECK 1: Database ---
         if db.pool is None:
@@ -1553,14 +1555,6 @@ async def handle_report_buttons(update: Update, context: ContextTypes.DEFAULT_TY
 
         await query.message.reply_text(
             f"🔍 **Searching for: {label}...**", 
-            reply_markup=stop_menu, 
-            parse_mode=ParseMode.MARKDOWN
-        )
-        
-        # ✅ FIX: Added 'reply_markup=stop_menu'
-        # This forces the bottom keyboard to change to "Exit / Report" immediately
-        await query.message.reply_text(
-            "🔍 **Searching for a partner...**", 
             reply_markup=stop_menu, 
             parse_mode=ParseMode.MARKDOWN
         )

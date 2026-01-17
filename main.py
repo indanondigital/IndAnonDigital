@@ -413,36 +413,53 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user = update.effective_user
-    
-    # 🛑 FORCE SUBSCRIBE CHECK 🛑
+    print(f"DEBUG: /start received from {user.id}") # Logs to Railway console
+
     try:
-        member = await context.bot.get_chat_member(chat_id=FORCE_CHANNEL_ID, user_id=user.id)
-        if member.status in ['left', 'kicked']:
-            kb = [
-                [InlineKeyboardButton("📢 Join Channel", url=FORCE_CHANNEL_LINK)],
-                [InlineKeyboardButton("✅ I Have Joined", callback_data="check_subscription")]
-            ]
-            await update.message.reply_text(
-                "⚠️ **Access Denied**\n\nPlease join our channel to use this bot.",
-                reply_markup=InlineKeyboardMarkup(kb),
-                parse_mode=ParseMode.MARKDOWN
-            )
+        # --- DEBUG CHECK 1: Database ---
+        if db.pool is None:
+            await update.message.reply_text("❌ **CRITICAL ERROR:** Database is not connected.\nCheck Railway Logs.")
             return
-    except Exception:
-        pass # Ignore errors (e.g., bot not admin yet)
 
-    # --- ORIGINAL LOGIC ---
-    log(user.id, "START_BOT")
-    await db.add_user(user.id, user.username, user.first_name)
-    
-    user_data = await db.get_user(user.id)
-    is_registered = user_data and user_data.get('gender') and user_data.get('age') and user_data.get('country')
-    
-    if not is_registered:
-        await check_registration(update, context, user.id)
-        return 
+        # --- DEBUG CHECK 2: Gatekeeper ---
+        try:
+            # Replace with your specific channel ID variable
+            FORCE_CHANNEL_ID = "@IndAnonUpdates" 
+            FORCE_CHANNEL_LINK = "https://t.me/IndAnonUpdates"
+            
+            member = await context.bot.get_chat_member(chat_id=FORCE_CHANNEL_ID, user_id=user.id)
+            if member.status in ['left', 'kicked']:
+                kb = [
+                    [InlineKeyboardButton("📢 Join Channel", url=FORCE_CHANNEL_LINK)],
+                    [InlineKeyboardButton("✅ I Have Joined", callback_data="check_subscription")]
+                ]
+                await update.message.reply_text(
+                    "⚠️ **Access Denied**\nPlease join our channel first.",
+                    reply_markup=InlineKeyboardMarkup(kb)
+                )
+                return
+        except Exception as e:
+            # If this fails, we print it but let the user pass (so the bot doesn't die)
+            print(f"⚠️ Gatekeeper Error: {e}")
+            await update.message.reply_text(f"⚠️ **Gatekeeper Error:** Bot might not be Admin in channel.\nError: {e}")
 
-    await send_welcome(context, user.id)
+        # --- DEBUG CHECK 3: Add User ---
+        try:
+            # This calls the db.py function we fixed
+            await db.add_user(user.id, user.username, user.first_name)
+        except TypeError as e:
+             await update.message.reply_text(f"❌ **DB Error (Arguments):**\nYour db.py is outdated.\nError: {e}")
+             return
+        except Exception as e:
+             await update.message.reply_text(f"❌ **DB Write Error:** {e}")
+             return
+
+        # --- SUCCESS ---
+        await send_welcome(context, user.id)
+
+    except Exception as e:
+        # Catch-all for any other crash
+        await update.message.reply_text(f"❌ **Fatal Crash:** {e}")
 
 async def handle_subscription_check(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -704,14 +721,6 @@ async def broadcast_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ **Posted to Channel!**")
     except Exception as e:
         await update.message.reply_text(f"❌ Error: {e}")
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    # 🛑 IGNORE GROUPS
-    if update.effective_chat.type != "private":
-        return
-
-    user_id = update.effective_user.id
-    # ... (Rest of code) ...
 
 async def clear_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Removes the stuck menu buttons from the group."""

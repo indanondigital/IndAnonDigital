@@ -778,12 +778,17 @@ async def validate_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return False # 🚫 STOP EVERYTHING
             
     except Exception as e:
-        print(f"⚠️ Lockup Check Error: {e}")
-        # If the bot isn't admin, we usually allow access to prevent crashes, 
-        # but for STRICT lockup, you might want to return False here too.
+        # If the bot isn't admin, we usually allow access to prevent crashes
         pass 
 
-    # --- 2. REGISTRATION CHECK ---
+    # --- 2. EXCEPTION FOR REGISTRATION INPUT (✅ THE FIX) ---
+    # This checks if the user is currently stuck in the "Type your Age" or "Type Location" state.
+    # If they are, we return True immediately so handle_text can save their input.
+    current_state = user_states.get(user.id)
+    if current_state in ["WAITING_AGE", "WAITING_MANUAL_LOC"]:
+        return True
+
+    # --- 3. REGISTRATION CHECK ---
     user_data = await db.get_user(user.id)
     
     # If user not in DB at all
@@ -797,7 +802,11 @@ async def validate_access(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not is_registered:
         if update.callback_query:
             await update.callback_query.answer("⚠️ Finish Registration First!", show_alert=True)
-        await check_registration(update, context, user.id)
+        
+        # Only prompt them if they aren't already being prompted
+        if not current_state:
+            await check_registration(update, context, user.id)
+            
         return False # 🚫 STOP EVERYTHING
 
     return True # ✅ ALLOWED

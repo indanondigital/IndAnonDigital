@@ -1495,8 +1495,10 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
                 f"1. Tap the QR image above to open it full screen.\n"
                 f"2. Tap the 3 dots (⋮) -> 'Save to Gallery'.\n"
                 f"3. Open GPay/PhonePe -> Click 'Scan QR' -> Select Image.\n\n"
-                f"✅ *After Paying:*\n"
-                f"Send the screenshot here for verification."
+                f"4. Enter the amount as per Plans.\n"
+                f"5. After paying, click the **'Share Receipt'** button inside the app.\n"
+                f"6. Share it directly to this bot here for verification.\n\n"
+                f"⚠️ *Note:* Simple screenshots may be rejected. Please use the Share button for faster approval."
             )
 
             if not os.path.exists("qrcode.jpg"):

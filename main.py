@@ -1338,6 +1338,11 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     user_id = query.from_user.id
     data = query.data
 
+    # --- CONFIGURATION: YOUR UPI DETAILS ---
+    # 🔴 REPLACE THESE TWO LINES WITH YOUR REAL DETAILS
+    YOUR_UPI_ID = "indanondigital@upi" 
+    YOUR_NAME = "Sachin Ramesh Paswan"
+
     # --- 1. ADMIN CLICKED "APPROVE" (With Stacking & Logging) ---
     if data.startswith("approve_"):
         # Format: approve_USERID_DAYS
@@ -1345,15 +1350,14 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
         target_id = int(parts[1])
         days_to_add = int(parts[2])
         
-        # --- 🧠 STACKING LOGIC (Preserved from Old Code) ---
-        # 1. Get current user data to see if they are already VIP
+        # --- 🧠 STACKING LOGIC (Preserved) ---
         user_data = await db.get_user(target_id)
         current_expiry = user_data.get('vip_expiry')
         
         total_days = days_to_add
         msg_extra = ""
 
-        # 2. Check if they already have active VIP
+        # Check if they already have active VIP
         if current_expiry and isinstance(current_expiry, datetime.datetime) and current_expiry > datetime.datetime.now():
             # Calculate remaining days
             delta = current_expiry - datetime.datetime.now()
@@ -1364,15 +1368,13 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
             msg_extra = f"\n(Added to existing {remaining_days} days)"
         # ----------------------------------------------------
 
-        # 3. Update DB with the TOTAL summed days
+        # Update DB with the TOTAL summed days
         await db.make_premium(target_id, days=total_days)
 
         # Update Admin's Message to show success
         await query.edit_message_caption(caption=f"✅ **APPROVED!**\nUser {target_id} given {days_to_add} days.\n(Total VIP: {total_days} days)")
 
         # --- 🔒 SHADOW LOG (Preserved) ---
-        # We assume amount is 0 or calculate approx for logs since it's manual
-        # Finding approx amount from days for logging purposes
         estimated_amount = "Unknown"
         for p in VIP_PLANS.values():
             if p['days'] == days_to_add:
@@ -1415,7 +1417,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
             pass
         return
 
-    # --- 3. USER SELECTS PLAN (SEND QR CODE) ---
+    # --- 3. USER SELECTS PLAN (UPDATED WITH UPI FEATURES) ---
     plan = VIP_PLANS.get(data)
     if plan:
         # Log that they clicked the button
@@ -1423,30 +1425,39 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
 
         amount_in_rupees = plan['amt'] // 100 
         
+        # 🔥 Feature 1: Generate Deep Link for One-Click Payment
+        pay_link = f"upi://pay?pa={YOUR_UPI_ID}&pn={YOUR_NAME}&am={amount_in_rupees}&cu=INR"
+
+        # 🔥 Feature 2: Copyable UPI ID in Caption
         caption = (
             f"💎 **Upgrade to VIP: {plan['lbl']}**\n"
             f"━━━━━━━━━━━━━━━━━━\n"
             f"💰 **Pay Amount: ₹{amount_in_rupees}**\n\n"
-            f"1️⃣ Scan the QR Code above.\n"
-            f"2️⃣ Pay exactly **₹{amount_in_rupees}**.\n"
-            f"3️⃣ **Send the payment screenshot here.**\n"
+            f"👇 **Tap to Copy UPI ID:**\n"
+            f"`{YOUR_UPI_ID}`\n\n"
+            f"📸 **Or Scan the QR Code above.**\n\n"
+            f"✅ **After Paying:**\n"
+            f"Send the screenshot here for verification."
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"⏳ *I will verify and activate your plan manually.*"
         )
+
+        # Create the Button
+        kb = [[InlineKeyboardButton("🚀 Pay via UPI App", url=pay_link)]]
 
         try:
             # Sends the qrcode.jpg from your folder
             await query.message.reply_photo(
                 photo=open("qrcode.jpg", "rb"),
                 caption=caption,
-                parse_mode=ParseMode.MARKDOWN
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=InlineKeyboardMarkup(kb) # <--- Added the Button here
             )
             # Save state so we know they are paying
             user_states[user_id] = f"WAITING_PAYMENT_{plan['days']}"
         except FileNotFoundError:
             await query.message.reply_text("⚠️ Error: `qrcode.jpg` not found. Please contact Admin.")
         
-        await query.answer()   
+        await query.answer()  
 
 # --- ADMIN COMMANDS ---
 async def admin_op(update: Update, context: ContextTypes.DEFAULT_TYPE):

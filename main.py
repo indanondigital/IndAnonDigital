@@ -1127,6 +1127,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if await db.get_partner(user_id):
             await update.message.reply_text("⚠️ **You are already in a chat!**\nUse /exit to leave first.", reply_markup=stop_menu, parse_mode=ParseMode.MARKDOWN)
             return
+        
+        # 2. 🆕 NEW CHECK: Check if ALREADY SEARCHING
+        if await db.is_searching(user_id):
+            await update.message.reply_text(
+                "🔍 **Already Searching...**\n"
+                "Please wait for a partner to join.",
+                reply_markup=stop_menu,
+                parse_mode=ParseMode.MARKDOWN
+            )
+            return
 
         log(user_id, "START_SEARCH")
         target = user_preferences.get(user_id, 'any')
@@ -1441,7 +1451,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
         await db.make_premium(target_id, days=total_days)
 
         # Update Admin's Message to show success
-        await query.edit_message_caption(caption=f"✅ **APPROVED!**\nUser {target_id} given {days_to_add} days.\n(Total VIP: {total_days} days)")
+        await query.edit_message_caption(caption=f"✅ *APPROVED!*\nUser {target_id} given {days_to_add} days.\n(Total VIP: {total_days} days)")
 
         # --- 🔒 SHADOW LOG (Preserved) ---
         estimated_amount = "Unknown"
@@ -1465,7 +1475,7 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
         try:
             await context.bot.send_message(
                 target_id, 
-                f"🎉 **Payment Verified!**\n\nYou are now a VIP Member for **{total_days} Days**!{msg_extra}\nStart chatting with /chat.",
+                f"🎉 *Payment Verified!*\n\nYou are now a VIP Member for *{total_days} Days*!{msg_extra}\nStart chatting with /chat.",
                 parse_mode=ParseMode.MARKDOWN
             )
         except:
@@ -1475,13 +1485,13 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
     # --- 2. ADMIN CLICKED "REJECT" ---
     if data.startswith("reject_"):
         target_id = int(data.split("_")[1])
-        await query.edit_message_caption(caption=f"❌ **REJECTED.**\nUser {target_id} was denied.")
+        await query.edit_message_caption(caption=f"❌ *REJECTED.*\nUser {target_id} was denied.")
         
         # Log the rejection
         log(target_id, "PAYMENT_REJECTED", admin=user_id)
         
         try:
-            await context.bot.send_message(target_id, "❌ **Payment Rejected.**\nYour screenshot was not accepted. Please contact the Admin.", parse_mode=ParseMode.MARKDOWN)
+            await context.bot.send_message(target_id, "❌ *Payment Rejected.*\nYour screenshot was not accepted. Please contact the Admin.", parse_mode=ParseMode.MARKDOWN)
         except:
             pass
         return
@@ -1499,13 +1509,13 @@ async def handle_payment_selection(update: Update, context: ContextTypes.DEFAULT
 
         # 🔥 Feature 2: Copyable UPI ID in Caption
         caption = (
-            f"💎 **Upgrade to VIP: {plan['lbl']}**\n"
+            f"💎 *Upgrade to VIP: {plan['lbl']}*\n"
             f"━━━━━━━━━━━━━━━━━━\n"
-            f"💰 **Pay Amount: ₹{amount_in_rupees}**\n\n"
-            f"👇 **Tap to Copy UPI ID:**\n"
+            f"💰 *Pay Amount: ₹{amount_in_rupees}*\n\n"
+            f"👇 *Tap to Copy UPI ID:*\n"
             f"`{YOUR_UPI_ID}`\n\n"
-            f"📸 **Or Scan the QR Code above.**\n\n"
-            f"✅ **After Paying:**\n"
+            f"📸 *Or Scan the QR Code above.*\n\n"
+            f"✅ *After Paying:*\n"
             f"Send the screenshot here for verification."
             f"━━━━━━━━━━━━━━━━━━\n"
         )
